@@ -1,5 +1,5 @@
 // Pure mapping only. No upload, logging, database access or client names.
-export const mappingVersion = 'pvz-v1';
+export const mappingVersion = 'pvz-v2-preserve-blanks';
 const fields = {
   dispatch: ['Трек ID', 'Статус', 'Дата создания', 'Стоимость доставки', 'Первый принявший агент'],
   delivery: ['Трек ID', 'Статус', 'Дата доставки', 'Стоимость доставки', 'Сумма COD', 'Агент'],
@@ -29,13 +29,12 @@ export function createMapper(kind, headers) {
     // Preserve source time until its timezone is confirmed. Never guess UTC.
     if (!rawDate) throw new Error('missing_date');
     const rawPvz = get(kind === 'dispatch' ? 'Первый принявший агент' : 'Агент');
-    if (kind === 'dispatch' && !rawPvz) throw new Error('missing_dispatch_pvz');
     return {
       id, sourceKind: kind, status: get('Статус'), sourceDate: rawDate,
       deliveryFeeMinor: money(get('Стоимость доставки')),
       codMinor: kind === 'delivery' ? money(get('Сумма COD')) : null,
-      pvz: rawPvz || '100 Toshkent',
-      pvzDefaulted: kind === 'delivery' && !rawPvz,
+      pvz: rawPvz || null,
+      pvzDefaulted: false,
       mappingVersion,
     };
   };
