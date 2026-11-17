@@ -101,3 +101,15 @@ https://developers.cloudflare.com/d1/platform/pricing/
 https://developers.cloudflare.com/d1/platform/limits/
 https://developers.cloudflare.com/d1/worker-api/d1-database/
 https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+
+## Production rollout, 2026-11-17
+
+D1 was provisioned and both migrations applied. The existing Worker was deployed
+with DB, assets, rate limiting and daily cleanup bindings; the replacement secret
+was set privately. The actual supplied CSVs completed online in Add mode:
+dispatch 19,347 records (676 blank PVZ), delivery 15,515 records (18 blank PVZ).
+Both history entries completed. Dashboard counts, last-upload time, date filtering
+and absence of a public raw-client route were checked through the deployed API.
+No login or paid-plan activation was added. Visual browser QA is still pending.
+
+URL: https://pup-analiytcs.jahongirr777.workers.dev/
