@@ -1,5 +1,8 @@
 # PUP Analytics: reliable data foundation
 
+**Superseded rollout:** see [DEPLOYMENT.md](DEPLOYMENT.md) for the current public
+dashboard, owner-approved import behavior, implemented test uploader and limits.
+
 Reviewed 2026-11-17 against main commit 34bd6954d27c8ae51f2da82f295047627478cd49.
 
 ## Observed state
