@@ -3,12 +3,12 @@ import test from 'node:test';
 import {createMapper} from '../server/import-mapping.mjs';
 const headers = ['Трек ID','Статус','Дата доставки','Стоимость доставки','Сумма COD','Агент','Имя клиента'];
 const row = ['00123','delivered','01-Nov-2026 12:00:00','12.34','100,50','   ','Invented'];
-test('delivery uses its own PVZ and defaults blank agents without retaining names', () => {
+test('delivery uses its own PVZ and preserves blank agents without retaining names', () => {
   const map = createMapper('delivery', headers);
   const result = map(row);
   assert.equal(result.id, '00123');
-  assert.equal(result.pvz, '100 Toshkent');
-  assert.equal(result.pvzDefaulted, true);
+  assert.equal(result.pvz, null);
+  assert.equal(result.pvzDefaulted, false);
   assert.equal(result.deliveryFeeMinor, 1234);
   assert.equal(result.codMinor, 10050);
   assert.ok(!JSON.stringify(result).includes('Invented'));
@@ -27,5 +27,5 @@ test('malformed headers, identifiers, amounts and rows are rejected', () => {
 test('dispatch uses first accepting agent and never defaults its PVZ', () => {
   const map = createMapper('dispatch', ['Трек ID','Статус','Дата создания','Стоимость доставки','Первый принявший агент']);
   assert.equal(map(['001','sent','date','0','Example']).pvz, 'Example');
-  assert.throws(() => map(['001','sent','date','0','']), /missing_dispatch_pvz/);
+  assert.equal(map(['001','sent','date','0','']).pvz, null);
 });
