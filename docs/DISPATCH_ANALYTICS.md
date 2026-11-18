@@ -80,3 +80,20 @@ Geographic sources:
 
 The existing 50k-per-file limit remains. This update does not assert that the
 current publication transaction is suitable for million-row files.
+
+## Verified production result
+
+2026-11-18: replacement completed online for dispatch only: 42,904 records,
+1,657 blank PVZ values, coverage November 1–17. Published at
+2026-11-18T09:50:15.275Z (14:50:15 Asia/Tashkent). Delivery aggregate fingerprint
+(counts, delivery charges and COD by PVZ) was unchanged. Legal entity count
+29,076 and individual count 13,828 reconcile to total shipments; all payment
+counts/amounts and destination counts reconcile. All supplied recipient districts
+were mapped to provinces.
+
+The deployed API passed daily growth, missing prior-month coverage, custom range,
+PVZ and blank-PVZ filtering, district drilldown and category reconciliation checks.
+All 12 automated tests and the Vite production build passed. Browser visual QA
+was unavailable in the current session, so no screenshot-based validation is claimed.
+
+Open: https://pup-analiytcs.jahongirr777.workers.dev/?page=dispatch
