@@ -1,6 +1,7 @@
 import {normalizeRecord} from './record.mjs';
 import {publicationStatements} from './publish.mjs';
 import {dispatchAnalytics} from './dispatch-analytics.mjs';
+import {compareDispatch,dispatchIds} from './dispatch-compare.mjs';
 const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(body,status=200)=>Response.json(body,{status,headers});
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
@@ -43,7 +44,12 @@ export default {
       }
       if(!env.DB)fail('database_not_configured',503);
       const db=env.DB;
-      if(request.method==='GET'&&path==='/api/dispatch'){
+      if(request.method==='GET'&&path==='/api/dispatch/ids'){
+        if(!env.UPLOAD_RATE_LIMITER)fail('read_limit_not_configured',503);
+        const limit=await env.UPLOAD_RATE_LIMITER.limit({key:'ids:'+ (request.headers.get('CF-Connecting-IP')||'unknown')});if(!limit.success)fail('rate_limited',429);
+        try{return json(await dispatchIds(db,url.searchParams));}catch(error){if(/^invalid_/.test(error.message))fail(error.message);throw error;}
+      }
+      if(request.method==='GET'&&['/api/dispatch','/api/dispatch/compare'].includes(path)){
         try{
           // Cache public aggregates by source revision: a successful replacement
           // invalidates them immediately without exposing personal rows or secrets.
@@ -51,10 +57,10 @@ export default {
           let key;
           if(cache){
             const revision=await db.prepare("SELECT revision FROM source_revision WHERE source_kind='dispatch'").first();
-            const cacheUrl=new URL(request.url);cacheUrl.searchParams.set('_source_revision',String(revision.revision));cacheUrl.searchParams.set('_analytics_version','2026-11-18-v2');key=new Request(cacheUrl);
+            const cacheUrl=new URL(request.url);cacheUrl.searchParams.set('_source_revision',String(revision.revision));cacheUrl.searchParams.set('_analytics_version','2026-11-18-v3');key=new Request(cacheUrl);
             const hit=await cache.match(key);if(hit)return json(await hit.json());
           }
-          const report=await dispatchAnalytics(db,url.searchParams);
+          const report=await (path.endsWith('/compare')?compareDispatch(db,url.searchParams):dispatchAnalytics(db,url.searchParams));
           if(cache)try{await cache.put(key,Response.json(report,{headers:{'Cache-Control':'public,max-age=300'}}));}catch{}
           return json(report);
         }catch(error){
@@ -75,7 +81,7 @@ export default {
         const data=await db.batch([
           db.prepare(`SELECT source_kind,pvz,sum(record_count) count,sum(fee_minor) fee_minor,sum(cod_minor) cod_minor
             FROM daily_totals WHERE business_date BETWEEN ? AND ? GROUP BY source_kind,pvz ORDER BY pvz`).bind(from,to),
-          db.prepare("SELECT max(completed_at) last_upload FROM upload_history WHERE state='complete'"),
+          db.prepare("SELECT max(value) last_upload FROM (SELECT max(completed_at) value FROM upload_history WHERE state='complete' UNION ALL SELECT max(updated_at) FROM data_updates)"),
           db.prepare('SELECT min(business_date) minDate,max(business_date) maxDate FROM daily_totals'),
         ]);
         return json({rows:data[0].results,lastUpload:data[1].results[0]?.last_upload||null,coverage:data[2].results[0]});
@@ -112,7 +118,7 @@ export default {
       if(match[2]==='chunk'){
         const b=await body(request);
         if(!Number.isInteger(b.seq)||b.seq<0||!Array.isArray(b.rows)||b.rows.length<1||b.rows.length>100)fail('invalid_chunk');
-        let rows;try{rows=b.rows.map(normalizeRecord);}catch{fail('invalid_record');}
+        let rows;try{const clientKeys=env.BEKBARAKA_CLIENT_KEYS?JSON.parse(env.BEKBARAKA_CLIENT_KEYS):[];rows=b.rows.map(r=>normalizeRecord(r,{sourceKind:job.source_kind,clientKeys}));}catch{fail('invalid_record');}
         const payload=JSON.stringify(rows),digest=await hash(payload);
         const prior=await db.prepare('SELECT digest FROM upload_chunks WHERE upload_id=? AND seq=?').bind(job.id,b.seq).first();
         if(prior){if(prior.digest!==digest)fail('chunk_conflict',409);return json({ok:true,replayed:true});}

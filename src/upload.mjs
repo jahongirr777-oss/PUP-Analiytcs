@@ -7,6 +7,7 @@ export const errors={
  replacement_not_configured:'Алмаштириш пароли ҳали созланмаган.',wrong_password:'Парол нотўғри.',
  data_changed_start_again:'Бошқа файл юкланди. Файлни қайта юкланг.',rate_limited:'Сўровлар кўпайди. Бироздан кейин қайта урининг.',
  publication_failed_existing_data_unchanged:'Файлда такрор ID бор ёки маълумот ўзгарди. Эски ҳисобот сақланди.',
+ invalid_data_changed:'Маълумотлар янгиланди. ID ойнасини ёпиб, қайта очинг.',
 };
 export async function api(path,options={},attempt=0){
  const response=await fetch(path,{...options,cache:'no-store',signal:options.signal||AbortSignal.timeout(60000)});
@@ -20,11 +21,16 @@ export async function api(path,options={},attempt=0){
  return result;
 }
 export async function* mappedRows(file,kind){
- let map,line=0;
+ let map,line=0,clientIndex=-1;
  for await(const row of readCsv(file.stream())){
    line++;
-   if(!map){map=createMapper(kind,row);continue;}
-   try{const record=map(row);record.codMinor??=0;normalizeRecord(record);yield record;}
+   if(!map){map=createMapper(kind,row);clientIndex=row.findIndex(x=>x.trim()==='Имя клиента');continue;}
+   try{const record=map(row);record.codMinor??=0;normalizeRecord(record);
+     if(kind==='dispatch'&&clientIndex>=0&&row[clientIndex]?.trim()){
+       const client=row[clientIndex].normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase();
+       record.clientKey=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(client))),x=>x.toString(16).padStart(2,'0')).join('');
+     }
+     yield record;}
    catch{throw Error(`${line}-қатор форматида хато. Файл ўзгартирилмади.`);}
  }
  if(!map)throw Error('Файл бўш.');

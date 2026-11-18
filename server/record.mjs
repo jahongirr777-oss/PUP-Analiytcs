@@ -7,7 +7,7 @@ export function businessDate(text){
   if(year<2000||year>2100||day<1||day>new Date(Date.UTC(year,month,0)).getUTCDate())throw Error('invalid_date');
   return `${year}-${String(month).padStart(2,'0')}-${m[1]}`;
 }
-export function normalizeRecord(row){
+export function normalizeRecord(row,options={}){
   if(!row||typeof row!=='object'||typeof row.id!=='string'||!row.id.trim()||row.id.length>128)throw Error('invalid_id');
   if(typeof row.status!=='string'||row.status.length>200)throw Error('invalid_status');
   if(row.pvz!==null&&(typeof row.pvz!=='string'||!row.pvz.trim()||row.pvz.length>200))throw Error('invalid_pvz');
@@ -16,7 +16,8 @@ export function normalizeRecord(row){
   const clientType=row.clientType??'unknown',paymentType=row.paymentType??'unknown',recipientDistrict=row.recipientDistrict??'';
   if(!['legal','individual','unknown'].includes(clientType)||!['corporate','recipient_cash','sender_cash','unpaid','unknown'].includes(paymentType))throw Error('invalid_category');
   if(typeof recipientDistrict!=='string'||recipientDistrict.length>200)throw Error('invalid_district');
-  return {id:row.id.trim(),businessDate:businessDate(row.sourceDate),status:row.status,pvz:row.pvz,
+  const assignedPvz=options.sourceKind==='dispatch'&&typeof row.clientKey==='string'&&options.clientKeys?.includes(row.clientKey)?"106 Fargo Bek-Baraka bo'limi":row.pvz;
+  return {id:row.id.trim(),businessDate:businessDate(row.sourceDate),status:row.status,pvz:assignedPvz,
     deliveryFeeMinor:row.deliveryFeeMinor,codMinor:row.codMinor,clientType,paymentType,recipientDistrict,
     recipientProvince:provinceFor(recipientDistrict)};
 }

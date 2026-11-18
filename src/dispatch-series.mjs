@@ -10,9 +10,10 @@ export function buildSeries(series,from,to,group,coverage){
   const calendar=periodRange(group,end);
   const range=calendar.from===start?calendar:periodRange('custom',end,start,end);
   const current=group==='day'?(daily.get(start)||{count:0,amount:0}):total(start,end);
-  const previous=total(range.previousFrom,range.previousTo);
+  let previous=total(range.previousFrom,range.previousTo),fallback=false;
+  if(group==='day'&&previous.count===0){const latest=series.filter(r=>r.date<start&&r.count>0).at(-1);if(latest){previous={count:latest.count,amount:latest.amount};range.previousFrom=range.previousTo=latest.date;fallback=true;}}
   const available=!!coverage.minDate&&start>=coverage.minDate&&end<=coverage.maxDate&&range.previousFrom>=coverage.minDate&&range.previousTo<=coverage.maxDate;
-  rows.push({from:start,to:end,...current,growth:comparison(current.count,previous.count,available),amountGrowth:comparison(current.amount,previous.amount,available),previousFrom:range.previousFrom,previousTo:range.previousTo});
+  rows.push({from:start,to:end,...current,growth:comparison(current.count,previous.count,available),amountGrowth:comparison(current.amount,previous.amount,available),previousFrom:range.previousFrom,previousTo:range.previousTo,fallback});
   start=addDays(end,1);
  }
  return rows;
