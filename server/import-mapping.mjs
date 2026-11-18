@@ -1,7 +1,7 @@
 // Pure mapping only. No upload, logging, database access or client names.
-export const mappingVersion = 'pvz-v2-preserve-blanks';
+export const mappingVersion = 'dispatch-details-v3';
 const fields = {
-  dispatch: ['Трек ID', 'Статус', 'Дата создания', 'Стоимость доставки', 'Первый принявший агент'],
+  dispatch: ['Трек ID', 'Дата создания', 'Стоимость доставки', 'Первый принявший агент'],
   delivery: ['Трек ID', 'Статус', 'Дата доставки', 'Стоимость доставки', 'Сумма COD', 'Агент'],
 };
 
@@ -35,6 +35,11 @@ export function createMapper(kind, headers) {
       codMinor: kind === 'delivery' ? money(get('Сумма COD')) : null,
       pvz: rawPvz || null,
       pvzDefaulted: false,
+      ...(kind==='dispatch'?{
+        clientType: get('Тип клиента')==='Мерчант'?'legal':get('Тип клиента')==='Клиент'?'individual':'unknown',
+        paymentType: ({'Корпоративная оплата':'corporate','Наличные от получателя':'recipient_cash','Наличные от отправителя':'sender_cash','Не оплачено':'unpaid'})[get('Статус оплаты')]||'unknown',
+        recipientDistrict: get('Регион получателя'),
+      }:{}),
       mappingVersion,
     };
   };

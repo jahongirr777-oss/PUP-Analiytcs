@@ -1,5 +1,6 @@
 import {normalizeRecord} from './record.mjs';
 import {publicationStatements} from './publish.mjs';
+import {dispatchAnalytics} from './dispatch-analytics.mjs';
 const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(body,status=200)=>Response.json(body,{status,headers});
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
@@ -42,6 +43,24 @@ export default {
       }
       if(!env.DB)fail('database_not_configured',503);
       const db=env.DB;
+      if(request.method==='GET'&&path==='/api/dispatch'){
+        try{
+          // Cache public aggregates by source revision: a successful replacement
+          // invalidates them immediately without exposing personal rows or secrets.
+          const cache=typeof caches==='undefined'?null:caches.default;
+          let key;
+          if(cache){
+            const revision=await db.prepare("SELECT revision FROM source_revision WHERE source_kind='dispatch'").first();
+            const cacheUrl=new URL(request.url);cacheUrl.searchParams.set('_source_revision',String(revision.revision));key=new Request(cacheUrl);
+            const hit=await cache.match(key);if(hit)return json(await hit.json());
+          }
+          const report=await dispatchAnalytics(db,url.searchParams);
+          if(cache)try{await cache.put(key,Response.json(report,{headers:{'Cache-Control':'public,max-age=300'}}));}catch{}
+          return json(report);
+        }catch(error){
+          if(/^invalid_/.test(error.message))fail(error.message);throw error;
+        }
+      }
       if(request.method==='GET'&&path==='/api/history'){
         const before=url.searchParams.get('before');
         if(before&&!/^\d{4}-\d\d-\d\dT[\d:.]+Z\|[\da-f-]{36}$/.test(before))fail('invalid_cursor');
@@ -57,8 +76,9 @@ export default {
           db.prepare(`SELECT source_kind,pvz,sum(record_count) count,sum(fee_minor) fee_minor,sum(cod_minor) cod_minor
             FROM daily_totals WHERE business_date BETWEEN ? AND ? GROUP BY source_kind,pvz ORDER BY pvz`).bind(from,to),
           db.prepare("SELECT max(completed_at) last_upload FROM upload_history WHERE state='complete'"),
+          db.prepare('SELECT min(business_date) minDate,max(business_date) maxDate FROM daily_totals'),
         ]);
-        return json({rows:data[0].results,lastUpload:data[1].results[0]?.last_upload||null});
+        return json({rows:data[0].results,lastUpload:data[1].results[0]?.last_upload||null,coverage:data[2].results[0]});
       }
       if(request.method!=='POST')return json({error:'not_found'},404);
       if(request.headers.get('Origin')!==url.origin)fail('same_origin_required',403);

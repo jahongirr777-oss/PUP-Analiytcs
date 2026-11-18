@@ -7,7 +7,7 @@ import {readCsv} from '../server/csv.mjs';
 
 export function database(){
  const sqlite=new DatabaseSync(':memory:');
- for(const file of ['0001_import_metadata.sql','0002_live_import.sql'])sqlite.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
+ for(const file of ['0001_import_metadata.sql','0002_live_import.sql','0003_dispatch_analytics.sql'])sqlite.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
  const db={prepare(sql){let args=[];return {
    bind(...values){args=values;return this;},
    async first(){return sqlite.prepare(sql).get(...args)||null;},
