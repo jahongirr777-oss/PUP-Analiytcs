@@ -33,8 +33,10 @@ date in the dispatch data, not today's potentially uncovered date. The user can
 change the anchor, use custom inclusive dates, or clear the date filter with X.
 
 Incomplete calendar periods compare matching elapsed portions of the previous
-period. Example: November 1–17 versus October 1–17. A custom interval compares
-the immediately preceding interval of equal inclusive length. Leap dates clamp
+period. Example: November 1–17 versus October 1–17. Complete calendar periods
+compare to the complete previous calendar period, including differing month
+lengths (April 1–30 versus March 1–31). A custom interval compares the immediately
+preceding interval of equal inclusive length. Leap dates clamp
 to the previous month's/year's valid last day. Decades respect their actual
 calendar lengths. Exact current and previous dates are shown in the UI.
 

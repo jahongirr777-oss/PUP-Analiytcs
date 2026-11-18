@@ -19,14 +19,16 @@ export function periodRange(kind,anchor,from,to){
  if(kind==='decade'){
   const first=day<=10?1:day<=20?11:21;start=monthDate(y,m,first);
   previousStart=first===1?monthDate(y,m-1,21):monthDate(y,m,first-10);
-  const previousLimit=add(start,-1);previousEnd=add(previousStart,Math.min(length(start,end),length(previousStart,previousLimit))-1);
+  const previousLimit=add(start,-1);
+  const currentLimit=first===21?monthDate(y,m+1,0):monthDate(y,m,first+9);
+  previousEnd=end===currentLimit?previousLimit:add(previousStart,Math.min(length(start,end),length(previousStart,previousLimit))-1);
  }
  if(['month','quarter','half','year'].includes(kind)){
   const months={month:1,quarter:3,half:6,year:12}[kind];const first=Math.floor(m/months)*months;
   start=monthDate(y,first);previousStart=monthDate(y,first-months);
   // Match elapsed calendar months and day, clamping leap days/month lengths.
   const prevMonth=m-months;const prevLast=new Date(Date.UTC(y,prevMonth+1,0)).getUTCDate();
-  previousEnd=monthDate(y,prevMonth,Math.min(day,prevLast));
+  previousEnd=end===monthDate(y,first+months,0)?add(start,-1):monthDate(y,prevMonth,Math.min(day,prevLast));
  }
  previousEnd??=add(previousStart,length(start,end)-1);
  return {from:start,to:end,previousFrom:previousStart,previousTo:previousEnd};

@@ -11,6 +11,10 @@ test('calendar ranges compare elapsed periods and clamp leap dates',()=>{
  assert.deepEqual(periodRange('week','2026-11-17'),{from:'2026-11-16',to:'2026-11-17',previousFrom:'2026-11-09',previousTo:'2026-11-10'});
  assert.deepEqual(periodRange('month','2026-11-17'),{from:'2026-11-01',to:'2026-11-17',previousFrom:'2026-10-01',previousTo:'2026-10-17'});
  assert.equal(periodRange('year','2024-02-29').previousTo,'2023-02-28');
+ assert.equal(periodRange('month','2026-04-30').previousTo,'2026-03-31');
+ assert.equal(periodRange('half','2026-06-30').previousTo,'2025-12-31');
+ assert.equal(periodRange('quarter','2026-06-30').previousTo,'2026-03-31');
+ assert.equal(periodRange('decade','2026-11-10').previousTo,'2026-10-31');
  assert.equal(periodRange('quarter','2026-11-17').from,'2026-10-01');
  assert.equal(periodRange('half','2026-11-17').from,'2026-07-01');
  assert.equal(periodRange('decade','2026-11-17').previousTo,'2026-11-07');

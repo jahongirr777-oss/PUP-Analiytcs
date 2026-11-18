@@ -51,7 +51,7 @@ export default {
           let key;
           if(cache){
             const revision=await db.prepare("SELECT revision FROM source_revision WHERE source_kind='dispatch'").first();
-            const cacheUrl=new URL(request.url);cacheUrl.searchParams.set('_source_revision',String(revision.revision));key=new Request(cacheUrl);
+            const cacheUrl=new URL(request.url);cacheUrl.searchParams.set('_source_revision',String(revision.revision));cacheUrl.searchParams.set('_analytics_version','2026-11-18-v2');key=new Request(cacheUrl);
             const hit=await cache.match(key);if(hit)return json(await hit.json());
           }
           const report=await dispatchAnalytics(db,url.searchParams);
