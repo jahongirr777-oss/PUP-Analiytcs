@@ -3,6 +3,8 @@ import {createMapper} from '../server/import-mapping.mjs';
 import {normalizeRecord} from '../server/record.mjs';
 export const labels={dispatch:'Отправка',delivery:'Доставка'};
 export const errors={
+ service_unavailable:'Ҳисобот хизмати вақтинча жавоб бермаяпти. Файлни қайта юкламасдан, «Янгилаш»ни босиб кўринг.',
+ d1_read_limit:'Базанинг бепул кунлик ўқиш лимити тугаган. Янги CSV юклаш лимит Тошкент вақти билан 05:00 да тиклангандан кейин ишлайди.',
  database_not_configured:'База ҳали уланмаган.',upload_rate_limit_not_configured:'Юклаш хизмати ҳали созланмаган.',
  replacement_not_configured:'Алмаштириш пароли ҳали созланмаган.',wrong_password:'Парол нотўғри.',
  data_changed_start_again:'Бошқа файл юкланди. Файлни қайта юкланг.',rate_limited:'Сўровлар кўпайди. Бироздан кейин қайта урининг.',

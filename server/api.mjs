@@ -2,6 +2,7 @@ import {normalizeRecord} from './record.mjs';
 import {publicationStatements} from './publish.mjs';
 import {dispatchAnalytics} from './dispatch-analytics.mjs';
 import {compareDispatch,dispatchIds} from './dispatch-compare.mjs';
+import {readSnapshot} from './read-snapshot.mjs';
 const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(body,status=200)=>Response.json(body,{status,headers});
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
@@ -44,10 +45,14 @@ export default {
       }
       if(!env.DB)fail('database_not_configured',503);
       const db=env.DB;
+      if(request.method==='GET'&&path!=='/api/dispatch/ids'){
+        try{const saved=await readSnapshot(env.REPORT_CACHE,url);if(saved){if(path==='/api/dashboard')saved.recoveryUntil=Date.parse(env.D1_READ_LIMIT_UNTIL)>Date.now()?env.D1_READ_LIMIT_UNTIL:null;return json(saved);}}
+        catch(error){if(/^invalid_/.test(error.message))fail(error.message);}
+      }
       if(request.method==='GET'&&path==='/api/dispatch/ids'){
         if(!env.UPLOAD_RATE_LIMITER)fail('read_limit_not_configured',503);
         const limit=await env.UPLOAD_RATE_LIMITER.limit({key:'ids:'+ (request.headers.get('CF-Connecting-IP')||'unknown')});if(!limit.success)fail('rate_limited',429);
-        try{return json(await dispatchIds(db,url.searchParams));}catch(error){if(/^invalid_/.test(error.message))fail(error.message);throw error;}
+        try{const saved=await readSnapshot(env.REPORT_CACHE,url);if(saved)return json(saved);return json(await dispatchIds(db,url.searchParams));}catch(error){if(/^invalid_/.test(error.message))fail(error.message);throw error;}
       }
       if(request.method==='GET'&&['/api/dispatch','/api/dispatch/compare'].includes(path)){
         try{
@@ -88,6 +93,7 @@ export default {
       }
       if(request.method!=='POST')return json({error:'not_found'},404);
       if(request.headers.get('Origin')!==url.origin)fail('same_origin_required',403);
+      if(Date.parse(env.D1_READ_LIMIT_UNTIL)>Date.now())fail('d1_read_limit',503);
       // Public additive imports are intentional; fail closed without rate limiting.
       if(!env.UPLOAD_RATE_LIMITER)fail('upload_rate_limit_not_configured',503);
       const limit=await env.UPLOAD_RATE_LIMITER.limit({key:request.headers.get('CF-Connecting-IP')||'unknown'});
@@ -130,9 +136,21 @@ export default {
       if(job.received_rows!==job.expected_rows)fail('incomplete_upload',409);
       const revision=await db.prepare('SELECT revision FROM source_revision WHERE source_kind=?').bind(job.source_kind).first();
       if(revision.revision!==job.base_revision)fail('data_changed_start_again',409);
-      try{await db.batch(publicationStatements(db,job));}catch{fail('publication_failed_existing_data_unchanged',409);}
+      const oldSnapshot=env.REPORT_CACHE?await env.REPORT_CACHE.get('current'):null;
+      if(env.REPORT_CACHE)await env.REPORT_CACHE.put('current',JSON.stringify({valid:false,invalidatedAt:new Date().toISOString()}));
+      try{await db.batch(publicationStatements(db,job));}catch{
+        if(oldSnapshot)try{await env.REPORT_CACHE.put('current',oldSnapshot);}catch{}
+        fail('publication_failed_existing_data_unchanged',409);
+      }
       const result=await db.prepare('SELECT applied_rows FROM upload_history WHERE id=?').bind(job.id).first();
       return json({ok:true,appliedRows:result.applied_rows});
-    }catch(error){return json({error:error.status?error.message:'service_unavailable'},error.status||503);}
+    }catch(error){
+      if(/free tier daily row read limit/i.test(String(error.message)+' '+String(error.cause?.message)))return json({error:'d1_read_limit'},503);
+      if(!error.status&&request.method==='GET'){
+        const safe=value=>String(value||'').replace(/'[^']*'/g,'[redacted]').slice(0,300);
+        console.error('PUP_DATABASE_FAILURE',JSON.stringify({path,name:error.name,message:safe(error.message),cause:safe(error.cause?.message)}));
+      }
+      return json({error:error.status?error.message:'service_unavailable'},error.status||503);
+    }
   },
 };
