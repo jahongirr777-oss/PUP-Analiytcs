@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pup-analiytcs",
+  "main": "server/index.js",
+  "compatibility_date": "2026-11-17",
+  "kv_namespaces": [{"binding":"REPORT_CACHE","id":"ad66e3ee67ad4afca2cba6db3843d793"}],
+  "vars": {"D1_READ_LIMIT_UNTIL":"2026-11-19T00:00:00.000Z"},
+  "d1_databases": [{"binding":"DB","database_name":"pup-analytics-db","database_id":"9e41f35d-b4e9-445c-a204-f6473262cdf7","migrations_dir":"migrations"}],
+  "triggers": {"crons":["0 0 * * *"]},
+  "ratelimits": [{"name":"UPLOAD_RATE_LIMITER","namespace_id":"7771001","simple":{"limit":120,"period":60}}],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api", "/api/*"]
+  }
+}
