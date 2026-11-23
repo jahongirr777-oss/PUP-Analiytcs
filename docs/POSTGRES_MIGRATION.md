@@ -4,7 +4,13 @@
 
 The user requires no payment card and no subscription charges. Oracle signup failed. R2 is disabled (Cloudflare error10042); the user cannot add a payment method. Do not enable R2, paid Workers, overages or a trial that silently becomes paid. Keep the current D1 deployment intact until a new destination is explicitly approved and remotely verified. The earlier rejected private KV snapshot transfer remains unapproved.
 
-Candidate checked 2026-11-23: **YugabyteDB Aeon Serverless Postgres**, not the old Sandbox and not paid Distributed Postgres. Official docs state no card required, a shared account allowance of 2vCPU,16GiB memory,100GiB storage. Verify the same offer in the actual account before proceeding. This is not an unlimited throughput, permanent pricing or free-tier SLA promise. Check idle/suspend, backup retention, network and other terms in the account; old Sandbox terms must not be assumed to apply to Serverless.
+## Actual account verification — 2026-11-23
+
+The owner completed signup. The authenticated cluster creation screen and account selector were inspected. This account offers only **Sandbox Free** and paid **Distributed**; there is no Serverless account or Serverless Postgres / Start free option visible. Sandbox explicitly shows 2 vCPU, 4 GiB memory, 10 GiB storage, up to 500 tables or 12.5M rows, 15 connections, a single node, and learning/non-production use. The 100 GiB Serverless offer from public documentation is **not available or verified in this account**. Do not present it as the user's available free plan.
+
+No cluster was created, no credential generated, no network rule changed, no private data transferred and no paid trial activated. The migration remains blocked on a genuinely suitable target. An empty Sandbox may be evaluated only as a test after agreeing to that scope; it is not an approved production replacement or proof of ten-million-record capacity. Schema compatibility, quotas including derived/staging data, backups, inactivity and production suitability need validation before real shipment data. Do not send the owner through another signup based only on advertised capacity.
+
+The code remains provider-portable PostgreSQL preparation. The account verification supersedes the earlier 100 GiB candidate recommendation.
 
 Sources:
 - https://docs.yugabyte.com/stable/yugabyte-cloud/serverless/
@@ -33,7 +39,7 @@ Reports use daily summaries and indexed, scoped ID pages. The Node service persi
 
 ## Activation checklist
 
-1. User signs up at https://cloud.yugabyte.com/ and confirms **Serverless Postgres / Start free**,2vCPU and the advertised free storage, with no billing profile. If only paid options appear, stop; do not choose them.
+1. A suitable free production target has not been confirmed. The current account offers Sandbox only; do not activate production migration against it. If the provider later enables Serverless, independently verify the actual free offer and terms before resuming this checklist.
 2. Obtain specific approval to transfer shipment IDs, dates, statuses, PVZ, fees/COD, client/payment categories, recipient district/province and completed upload history. No client names, phone numbers, CSV originals or existing Cloudflare credentials are transferred.
 3. Create a restricted application database role. Keep admin credentials local. Require TLS certificate verification; use supplied CA if necessary. Determine a secure trusted-IP strategy for Cloudflare's variable egress before live data. Provider docs explicitly advise against0.0.0.0/0 for production; do not silently open access worldwide. One documented no-card candidate is Hyperdrive Free with Cloudflare IP ranges allowlisted and origin TLS verify-full. It adds a separate100,000 SQL-statements/day quota (including cache hits). Create it only after owner approval for the database credentials/destination, verify the origin CA/hostname, then set HYPERDRIVE_TLS_VERIFIED=true and add the returned HYPERDRIVE binding. Do not enable this flag before verification. A direct connection is also supported if a secure allowlist is possible. If the required network configuration needs payment, report the blocker instead of weakening security.
 4. Test schema, JSONB, transactions, temporary tables, read snapshots, locks, indexes and timeout/rollback on the actual Serverless engine using synthetic data. PGlite tests establish PostgreSQL semantics but do not establish cloud compatibility, routing or throughput.
