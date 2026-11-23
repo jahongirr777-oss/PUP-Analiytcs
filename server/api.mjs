@@ -3,6 +3,8 @@ import {publicationStatements} from './publish.mjs';
 import {dispatchAnalytics} from './dispatch-analytics.mjs';
 import {compareDispatch,dispatchIds} from './dispatch-compare.mjs';
 import {readSnapshot} from './read-snapshot.mjs';
+import {getDatabase,databaseProvider,databaseConfigured} from './database.mjs';
+const snapshotStore=env=>databaseProvider(env)==='d1'?env.REPORT_CACHE:undefined;
 const headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(body,status=200)=>Response.json(body,{status,headers});
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
@@ -28,10 +30,11 @@ async function jobAccess(request,db,id){
 }
 export default {
   async scheduled(_controller,env){
-    if(!env.DB)return;
-    await env.DB.batch([
-      env.DB.prepare("UPDATE upload_history SET state='cancelled' WHERE state='uploading' AND expires_at<?").bind(Date.now()),
-      env.DB.prepare("DELETE FROM upload_chunks WHERE upload_id IN (SELECT id FROM upload_history WHERE state='cancelled')"),
+    if(!databaseConfigured(env))return;
+    const db=await getDatabase(env);
+    await db.batch([
+      db.prepare("UPDATE upload_history SET state='cancelled' WHERE state='uploading' AND expires_at<?").bind(Date.now()),
+      db.prepare("DELETE FROM upload_chunks WHERE upload_id IN (SELECT id FROM upload_history WHERE state='cancelled')"),
     ]);
   },
   async fetch(request,env){
@@ -40,20 +43,23 @@ export default {
     try{
       if(path==='/api/health'){
         if(!['GET','HEAD'].includes(request.method))return json({error:'method_not_allowed'},405);
-        const result=json({ok:true,mode:env.DB?'live':'setup',database_connected:!!env.DB});
+        const configured=databaseConfigured(env);
+        const result=json({ok:true,mode:configured?'live':'setup',database_connected:configured});
         return request.method==='HEAD'?new Response(null,{headers:result.headers}):result;
       }
-      if(!env.DB)fail('database_not_configured',503);
-      const db=env.DB;
+      if(path==='/api/config'&&request.method==='GET')return json({maxRows:50000,maxBytes:50*1024*1024,chunkRows:100,asyncPublication:false});
+      if(!databaseConfigured(env))fail('database_not_configured',503);
+      const reportStore=snapshotStore(env);
       if(request.method==='GET'&&path!=='/api/dispatch/ids'){
-        try{const saved=await readSnapshot(env.REPORT_CACHE,url);if(saved){if(path==='/api/dashboard')saved.recoveryUntil=Date.parse(env.D1_READ_LIMIT_UNTIL)>Date.now()?env.D1_READ_LIMIT_UNTIL:null;return json(saved);}}
+        try{const saved=await readSnapshot(reportStore,url);if(saved){if(path==='/api/dashboard')saved.recoveryUntil=Date.parse(env.D1_READ_LIMIT_UNTIL)>Date.now()?env.D1_READ_LIMIT_UNTIL:null;return json(saved);}}
         catch(error){if(/^invalid_/.test(error.message))fail(error.message);}
       }
       if(request.method==='GET'&&path==='/api/dispatch/ids'){
         if(!env.UPLOAD_RATE_LIMITER)fail('read_limit_not_configured',503);
         const limit=await env.UPLOAD_RATE_LIMITER.limit({key:'ids:'+ (request.headers.get('CF-Connecting-IP')||'unknown')});if(!limit.success)fail('rate_limited',429);
-        try{const saved=await readSnapshot(env.REPORT_CACHE,url);if(saved)return json(saved);return json(await dispatchIds(db,url.searchParams));}catch(error){if(/^invalid_/.test(error.message))fail(error.message);throw error;}
+        try{const saved=await readSnapshot(reportStore,url);if(saved)return json(saved);return json(await dispatchIds(await getDatabase(env),url.searchParams));}catch(error){if(/^invalid_/.test(error.message))fail(error.message);throw error;}
       }
+      const db=await getDatabase(env);
       if(request.method==='GET'&&['/api/dispatch','/api/dispatch/compare'].includes(path)){
         try{
           // Cache public aggregates by source revision: a successful replacement
@@ -62,10 +68,10 @@ export default {
           let key;
           if(cache){
             const revision=await db.prepare("SELECT revision FROM source_revision WHERE source_kind='dispatch'").first();
-            const cacheUrl=new URL(request.url);cacheUrl.searchParams.set('_source_revision',String(revision.revision));cacheUrl.searchParams.set('_analytics_version','2026-11-18-v3');key=new Request(cacheUrl);
+            const cacheUrl=new URL(request.url);cacheUrl.searchParams.set('_source_revision',String(revision.revision));cacheUrl.searchParams.set('_analytics_version','2026-11-18-v3');cacheUrl.searchParams.set('_backend',databaseProvider(env)+':'+(env.DB_GENERATION||'stable'));key=new Request(cacheUrl);
             const hit=await cache.match(key);if(hit)return json(await hit.json());
           }
-          const report=await (path.endsWith('/compare')?compareDispatch(db,url.searchParams):dispatchAnalytics(db,url.searchParams));
+          const report=await (path.endsWith('/compare')?compareDispatch(db,url.searchParams):dispatchAnalytics(db,url.searchParams,{rollups:['turso','postgres'].includes(databaseProvider(env))}));
           if(cache)try{await cache.put(key,Response.json(report,{headers:{'Cache-Control':'public,max-age=300'}}));}catch{}
           return json(report);
         }catch(error){
@@ -75,7 +81,7 @@ export default {
       if(request.method==='GET'&&path==='/api/history'){
         const before=url.searchParams.get('before');
         if(before&&!/^\d{4}-\d\d-\d\dT[\d:.]+Z\|[\da-f-]{36}$/.test(before))fail('invalid_cursor');
-        const [date,id]=before?before.split('|'):['9999',''];
+        const [date,id]=before?before.split('|'):['9999','00000000-0000-0000-0000-000000000000'];
         const {results}=await db.prepare(`SELECT id,source_kind,mode,state,expected_rows,received_rows,applied_rows,created_at,completed_at
           FROM upload_history WHERE created_at<? OR (created_at=? AND id<?) ORDER BY created_at DESC,id DESC LIMIT 50`).bind(date,date,id).all();
         const last=results.at(-1);return json({items:results,nextCursor:results.length===50?last.created_at+'|'+last.id:null});
@@ -87,13 +93,13 @@ export default {
           db.prepare(`SELECT source_kind,pvz,sum(record_count) count,sum(fee_minor) fee_minor,sum(cod_minor) cod_minor
             FROM daily_totals WHERE business_date BETWEEN ? AND ? GROUP BY source_kind,pvz ORDER BY pvz`).bind(from,to),
           db.prepare("SELECT max(value) last_upload FROM (SELECT max(completed_at) value FROM upload_history WHERE state='complete' UNION ALL SELECT max(updated_at) FROM data_updates)"),
-          db.prepare('SELECT min(business_date) minDate,max(business_date) maxDate FROM daily_totals'),
+          db.prepare('SELECT min(business_date) "minDate",max(business_date) "maxDate" FROM daily_totals'),
         ]);
         return json({rows:data[0].results,lastUpload:data[1].results[0]?.last_upload||null,coverage:data[2].results[0]});
       }
       if(request.method!=='POST')return json({error:'not_found'},404);
       if(request.headers.get('Origin')!==url.origin)fail('same_origin_required',403);
-      if(Date.parse(env.D1_READ_LIMIT_UNTIL)>Date.now())fail('d1_read_limit',503);
+      if(databaseProvider(env)==='d1'&&Date.parse(env.D1_READ_LIMIT_UNTIL)>Date.now())fail('d1_read_limit',503);
       // Public additive imports are intentional; fail closed without rate limiting.
       if(!env.UPLOAD_RATE_LIMITER)fail('upload_rate_limit_not_configured',503);
       const limit=await env.UPLOAD_RATE_LIMITER.limit({key:request.headers.get('CF-Connecting-IP')||'unknown'});
@@ -136,10 +142,10 @@ export default {
       if(job.received_rows!==job.expected_rows)fail('incomplete_upload',409);
       const revision=await db.prepare('SELECT revision FROM source_revision WHERE source_kind=?').bind(job.source_kind).first();
       if(revision.revision!==job.base_revision)fail('data_changed_start_again',409);
-      const oldSnapshot=env.REPORT_CACHE?await env.REPORT_CACHE.get('current'):null;
-      if(env.REPORT_CACHE)await env.REPORT_CACHE.put('current',JSON.stringify({valid:false,invalidatedAt:new Date().toISOString()}));
-      try{await db.batch(publicationStatements(db,job));}catch{
-        if(oldSnapshot)try{await env.REPORT_CACHE.put('current',oldSnapshot);}catch{}
+      const oldSnapshot=reportStore?await reportStore.get('current'):null;
+      if(reportStore)await reportStore.put('current',JSON.stringify({valid:false,invalidatedAt:new Date().toISOString()}));
+      try{await db.batch(publicationStatements(db,job,{rollups:['turso','postgres'].includes(databaseProvider(env))}));}catch{
+        if(oldSnapshot)try{await reportStore.put('current',oldSnapshot);}catch{}
         fail('publication_failed_existing_data_unchanged',409);
       }
       const result=await db.prepare('SELECT applied_rows FROM upload_history WHERE id=?').bind(job.id).first();
@@ -148,7 +154,7 @@ export default {
       if(/free tier daily row read limit/i.test(String(error.message)+' '+String(error.cause?.message)))return json({error:'d1_read_limit'},503);
       if(!error.status&&request.method==='GET'){
         const safe=value=>String(value||'').replace(/'[^']*'/g,'[redacted]').slice(0,300);
-        console.error('PUP_DATABASE_FAILURE',JSON.stringify({path,name:error.name,message:safe(error.message),cause:safe(error.cause?.message)}));
+        console.error('PUP_DATABASE_FAILURE',JSON.stringify(databaseProvider(env)==='postgres'?{path,name:error.name,code:error.code||'unknown'}:{path,name:error.name,message:safe(error.message),cause:safe(error.cause?.message)}));
       }
       return json({error:error.status?error.message:'service_unavailable'},error.status||503);
     }

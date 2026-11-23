@@ -1,3 +1,4 @@
+import {apiTarget} from './api-target.mjs';
 import {readCsv} from '../server/csv.mjs';
 import {createMapper} from '../server/import-mapping.mjs';
 import {normalizeRecord} from '../server/record.mjs';
@@ -9,10 +10,15 @@ export const errors={
  replacement_not_configured:'Алмаштириш пароли ҳали созланмаган.',wrong_password:'Парол нотўғри.',
  data_changed_start_again:'Бошқа файл юкланди. Файлни қайта юкланг.',rate_limited:'Сўровлар кўпайди. Бироздан кейин қайта урининг.',
  publication_failed_existing_data_unchanged:'Файлда такрор ID бор ёки маълумот ўзгарди. Эски ҳисобот сақланди.',
+ import_too_large_split_file:'Файлни тайёрлаш вақти чекловга етди. Эски маълумот сақланди. Файлни кичик қисмларга бўлиб «Добавить» қилинг.',
+ duplicate_id_in_file:'Файл ичида такрор ID бор. Эски маълумот сақланди.',
+ import_queue_full:'Бошқа файллар юкланмоқда. Бироздан кейин қайта урининг.',
+ incomplete_upload:'Файл тўлиқ юкланмади. Эски маълумот сақланди.',
+ upload_expired:'Юклаш муддати тугади. Файлни қайта танланг.',
  invalid_data_changed:'Маълумотлар янгиланди. ID ойнасини ёпиб, қайта очинг.',
 };
 export async function api(path,options={},attempt=0){
- const response=await fetch(path,{...options,cache:'no-store',signal:options.signal||AbortSignal.timeout(60000)});
+ const response=await fetch(apiTarget(path,import.meta.env?.VITE_API_BASE_URL||''),{...options,cache:'no-store',signal:options.signal||AbortSignal.timeout(60000)});
  let result;try{result=await response.json();}catch{throw Error('Сервер тўғри жавоб бермади.');}
  if(response.status===429&&attempt<3){
    await new Promise(resolve=>setTimeout(resolve,60000));
@@ -38,13 +44,14 @@ export async function* mappedRows(file,kind){
  if(!map)throw Error('Файл бўш.');
 }
 export async function upload(file,kind,mode,password,onProgress,signal){
- if(file.size>50*1024*1024)throw Error('Биринчи версияда файл ҳажми 50 MB гача.');
+ const limits=await api('/api/config',{signal});
+ if(file.size>limits.maxBytes)throw Error(`Файл ҳажми ${Math.floor(limits.maxBytes/1024/1024)} MB гача бўлиши керак.`);
  let count=0;const ids=new Set();
  onProgress('Файл текширилмоқда…');
  for await(const row of mappedRows(file,kind)){
    if(signal?.aborted)throw Error('Юклаш бекор қилинди.');
    if(ids.has(row.id))throw Error('Файл ичида такрор ID бор. Аввал уларни тўғриланг.');
-   ids.add(row.id);if(++count>50000)throw Error('Биринчи синов версиясида битта файл 50 000 қаторгача.');
+   ids.add(row.id);if(++count>limits.maxRows)throw Error(`Битта файл ${limits.maxRows.toLocaleString()} қаторгача бўлиши керак.`);
  }
  if(!count)throw Error('Файлда маълумот йўқ.');
  const headers={'Content-Type':'application/json',...(mode==='replace'?{'X-Replace-Password':password}:{})};
@@ -56,9 +63,17 @@ export async function upload(file,kind,mode,password,onProgress,signal){
    sent+=chunk.length;seq++;chunk=[];onProgress(`${sent.toLocaleString()} / ${count.toLocaleString()} қатор юкланди`);
  };
  try{
-   for await(const row of mappedRows(file,kind)){chunk.push(row);if(chunk.length===100)await send();}
+   for await(const row of mappedRows(file,kind)){chunk.push(row);if(chunk.length===limits.chunkRows)await send();}
    if(chunk.length)await send();onProgress('Ҳисобот янгиланмоқда…');
-   return await api(`/api/imports/${job.id}/complete`,{method:'POST',headers:jobHeaders,body:'{}',signal});
+   let result=await api(`/api/imports/${job.id}/complete`,{method:'POST',headers:jobHeaders,body:'{}',signal});
+   while(result.state==='publishing'){
+     if(signal?.aborted)throw Error('Файл юкланган. Ҳисобот серверда тайёрланмоқда; ҳолатни юклаш тарихидан кўринг.');
+     onProgress('Файл юкланди. Ҳисобот серверда тайёрланмоқда…');
+     await new Promise(resolve=>setTimeout(resolve,2000));
+     result=await api(`/api/imports/${job.id}/status`,{headers:{'X-Upload-Token':job.token},signal});
+   }
+   if(result.state==='failed')throw Error(errors[result.error]||errors.publication_failed_existing_data_unchanged);
+   return result;
  }catch(error){
    // A completed publication remains complete even if its response was lost.
    try{await api(`/api/imports/${job.id}/cancel`,{method:'POST',headers:jobHeaders,body:'{}'});}catch{}

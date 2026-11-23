@@ -1,7 +1,7 @@
 // D1 batch is atomic. A failed validation or stale base revision rolls it all back.
-export function publicationStatements(db,job){
+export function publicationStatements(db,job,options={}){
   const bind=sql=>db.prepare(sql).bind(job.id);
-  return [
+  const statements=[
     bind("UPDATE upload_history SET state='publishing' WHERE id=?"),
     db.prepare(`DELETE FROM operational_records WHERE source_kind=(SELECT source_kind FROM upload_history WHERE id=?)
       AND EXISTS(SELECT 1 FROM upload_history WHERE id=? AND state='publishing' AND mode='replace')`).bind(job.id,job.id),
@@ -27,4 +27,13 @@ export function publicationStatements(db,job){
     bind("UPDATE upload_history SET state='complete',completed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND state='publishing'"),
     bind('DELETE FROM upload_chunks WHERE upload_id=?'),
   ];
+  if(options.rollups){
+    const rollups=[['dispatch_clients_daily','client_type',''],['dispatch_payments_daily','payment_type',',sum(fee_minor)'],['dispatch_routes_daily','recipient_province','']];
+    const position=statements.length-3;
+    statements.splice(position,0,...rollups.flatMap(([table,category,amount])=>[
+      bind(`DELETE FROM ${table} WHERE (SELECT source_kind FROM upload_history WHERE id=?)='dispatch'`),
+      bind(`INSERT INTO ${table} SELECT pvz,business_date,${category},sum(record_count)${amount} FROM dispatch_cube WHERE (SELECT source_kind FROM upload_history WHERE id=?)='dispatch' GROUP BY pvz,business_date,${category}`),
+    ]));
+  }
+  return statements;
 }
