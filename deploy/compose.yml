@@ -1,0 +1,33 @@
+# Optional existing-VPS backend. The no-card cloud database path uses the Worker
+# entry instead, and needs no new VPS or R2 subscription.
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.postgres
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8080
+      TRUST_PROXY: 1
+      REPORT_CACHE_DIRECTORY: /data/reports
+    expose: ["8080"]
+    volumes: ["reports:/data/reports"]
+    init: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    mem_limit: 512m
+  https:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    env_file: .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  reports:
+  caddy_data:
+  caddy_config:

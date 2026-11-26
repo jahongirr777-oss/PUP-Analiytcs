@@ -6,17 +6,26 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.mjs",
+    "deploy": "wrangler deploy",
+    "postgres:start": "node postgres/server.mjs",
+    "postgres:migrate": "node postgres/server.mjs --migrate",
+    "postgres:check": "wrangler deploy --config wrangler.postgres.jsonc --dry-run"
   },
   "dependencies": {
+    "@libsql/client": "0.18.0",
     "lucide-react": "^0.468.0",
+    "pg": "8.16.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^5.0.0",
+    "@electric-sql/pglite": "0.5.17",
     "@tailwindcss/vite": "^4.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
     "tailwindcss": "^4.0.0",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "wrangler": "4.157.0"
   }
 }
